@@ -1,41 +1,42 @@
-#include "Adafruit_FloraPixel.h"
+// Headband Program for fox ears with florapixels written by Bluebie 2013-4-14
+// first prepare the chip with the write_sine_wave_table_to_eeprom sketch
+//#include "Adafruit_FloraPixel.h"
+#include <Adafruit_NeoPixel.h>
+#include <EEPROM.h>
+#include "utilities.h"
 
-// Headband Program for fox ears with florapixels written by Bluebie 2013-3-3
-// TODO: Figure out why heartbeat bugs out after a while
+// ----------- available modes:
+#define MODE_HEARTBEAT        0
+#define MODE_WHITE            1
+#define MODE_BOTH_LIGHT       2
+#define MODE_EDGE_LIGHT       3
+#define MODE_INNER_LIGHT      4
+#define MODE_OPPOSITES        5
+#define MODE_TWO_HUE_STROBE   6
+#define MODE_REGULAR_STROBE   7
+#define MODE_TOGGLE_STROBE    8
+#define MODE_WAVE             9
+#define MODE_RANDOM_WALKER   10
+#define MODE_FOREST_WALK     11
+#define MODE_OCEANIC         12
+#define MODE_RAINBOW_CYCLE   13
+// --------------------- total:
+#define MODES                14
+// -------------------- timing:
+#define STROBE_INTERVAL      30 /* milliseconds between transition */
+#define TOGGLE_INTERVAL      50
+#define HUMAN_REACTION_TIME  40 /* takes 20ms to react from eye to finger */
+#define COLOR_SELECT_WAIT    20 /* milliseconds between hue increments when holding button */
+#define RANDOM_WALKER_WAIT   50
+#define RAINBOW_CYCLE_DELAY  16
 
-#define MODE_HEARTBEAT      0
-#define MODE_COLORSWEEP     1
-#define MODE_HAIRMATCH      2
-#define MODE_RAINBOWCYCLE   3
-#define MODE_TRON_CLUE      4
-#define MODE_TRON_HERO      5
-#define MODE_TRON_HERO_DIM  6
-#define MODE_TRON_GREEN     7
-#define MODE_TRON_PURPLE    8
-#define MODE_COLOR_CRAWL    9
-#define MODE_PURE_BLUE     10
-#define MODE_PURE_GREEN    11
-#define MODE_PURE_RED      12
-#define MODE_STROBE_RED    13
-#define MODE_STROBE_GREEN  14
-#define MODE_STROBE_BLUE   15
-#define MODE_STROBE_PURPLE 16
-#define MODE_PULSE_BLUE    17
-#define MODE_PULSE_GREEN   18
-#define MODE_PULSE_RED     19
-#define MODES              20
 byte mode = MODE_HEARTBEAT;
-
-#define RGB(r,g,b) ((RGBPixel){(byte) (b), (byte) (r), (byte) (g)})
-//#define RGB(r,g,b) RAW_RGB((((r)*(r)) / 256), (((g)*(g)) / 256), (((b)*(b)) / 256))
-#define GRAY(intensity) RGB(intensity, intensity, intensity)
-//#define GAMMA(rgb) ((RGBPixel) {(rgb.red * rgb.red) / 256, (rgb.green * rgb.green) / 256, (rgb.blue * rgb.blue) / 256})
-//#define GAMMA(rgb) multiply_colors(rgb, rgb)
-// fake gamma passthrough - took up too much progmem and complexity!
-#define GAMMA(rgb) (rgb)
+byte hue = 85; // currently selected hue - default is red
+RGBPixel hue_cache;
 
 // Set the first variable to the NUMBER of pixels. 25 = 25 pixels in a row
-Adafruit_FloraPixel headband = Adafruit_FloraPixel(6);
+//Adafruit_FloraPixel headband = Adafruit_FloraPixel(6);
+Adafruit_NeoPixel headband = Adafruit_NeoPixel(6, 3, NEO_RGB + NEO_KHZ400);
 
 void setup() {
   digitalWrite(4, LOW);
@@ -48,119 +49,75 @@ void setup() {
   
   headband.begin();
   
-  // Update the headband, to start they are all 'off'
-  headband.show();
+  hue_cache = Wheel(hue);
+}
+
+void on_button() {
+  unsigned long start_time = millis();
+  
+  for (int i = 255; i >= 0; i--) {
+    set_all(RGB(i,0,0));
+    headband.show();
+  }
+  
+  while (digitalRead(5) == LOW) {
+    if (millis() - start_time > 500) { // long hold
+      hue -= 1;
+      hue_cache = Wheel(hue);
+      set_all(hue_cache);
+      headband.show();
+      delay(COLOR_SELECT_WAIT);
+    }
+  }
+  
+  set_all(BLACK);
+  
+  if (millis() - start_time < 500) {
+    // it was a short press, so increment mode by one
+    mode = (mode + 1) % MODES;
+  } else {
+    // it was a long hold
+    // because human reaction times are slow, for colour selection should reverse hue back
+    // by about 20ms (FINGER_REACTION_TIME) to give user the colour they intended
+    hue += HUMAN_REACTION_TIME / COLOR_SELECT_WAIT;
+  }
+  
+  //srand(rand() + micros()); // reseed random number generator with user input
+  delay(100);
 }
 
 void loop() {
-  // Some example procedures showing how to display to the pixels
-  if (digitalRead(5) == LOW) {
-    mode = (mode + 1) % MODES;
-    
-    for (int i = 255; i >= 0; i--) {
-      set_all_pixels(GAMMA(RGB(i,0,0)));
-      headband.show();
-    }
-    
-    while (digitalRead(5) == LOW) {;}
-    delay(100);
-  }
+  // detect when button is pressed down
+  if (digitalRead(5) == LOW) on_button();
   
-  if (mode == MODE_RAINBOWCYCLE)       iterate_rainbowcycle();
-  else if (mode == MODE_COLORSWEEP)    iterate_colorsweep();
-  else if (mode == MODE_HAIRMATCH)     iterate_hairmatch();
-  // the tron ones are all pretty rubbish except purple
-  else if (mode == MODE_TRON_CLUE)     iterate_tron_style(RGB(255,30,15)); // ???
-  //else if (mode == MODE_TRON_CLUE_DIM) iterate_tron_style(RGB(228,87,39)); // crap
-  else if (mode == MODE_TRON_HERO)     iterate_tron_style(RGB(255,255,255)); // awesome
-  else if (mode == MODE_TRON_HERO_DIM) iterate_tron_style(RGB(60,255,255)); // cool!
-  else if (mode == MODE_TRON_GREEN)    iterate_tron_style(RGB(40,255,30)); // pretty cool!
-  else if (mode == MODE_TRON_PURPLE)   iterate_tron_style(RGB(255,60,255)); // awesome
-  else if (mode == MODE_HEARTBEAT)     iterate_heartbeat();
-  else if (mode == MODE_PURE_BLUE)     iterate_color(RGB(0,0,255));
-  else if (mode == MODE_PURE_GREEN)    iterate_color(RGB(0,255,0));
-  else if (mode == MODE_PURE_RED)      iterate_color(RGB(255,0,0));
-  else if (mode == MODE_STROBE_RED)    iterate_strobe(RGB(255,0,0), 60);
-  else if (mode == MODE_STROBE_GREEN)  iterate_strobe(RGB(0,255,0), 60);
-  else if (mode == MODE_STROBE_BLUE)   iterate_strobe(RGB(0,0,255), 60);
-  else if (mode == MODE_STROBE_PURPLE) iterate_strobe(RGB(180,0,255), 60);
-  else if (mode == MODE_COLOR_CRAWL)   iterate_color_crawl();
-  else if (mode == MODE_PULSE_BLUE)    iterate_pulse(RGB(0,0,255));
-  else if (mode == MODE_PULSE_GREEN)   iterate_pulse(RGB(0,255,0));
-  else if (mode == MODE_PULSE_RED)     iterate_pulse(RGB(255,0,0));
+  // execute selected mode
+  if (mode == MODE_HEARTBEAT) heartbeat(hue_cache);
+  else if (mode == MODE_WHITE) set_all(RGB(255,255,255));
+  else if (mode == MODE_BOTH_LIGHT) set_all(hue_cache);
+  else if (mode == MODE_EDGE_LIGHT) set_edges(hue_cache);
+  else if (mode == MODE_INNER_LIGHT) set_inner_ears(hue_cache);
+  else if (mode == MODE_OPPOSITES) opposites(hue);
+  else if (mode == MODE_TWO_HUE_STROBE) two_color_strobe(hue_cache, Wheel(hue + 127));
+  else if (mode == MODE_REGULAR_STROBE) strobe(hue_cache);
+  else if (mode == MODE_TOGGLE_STROBE) toggle_strobe(hue_cache);
+  else if (mode == MODE_WAVE) wave(hue_cache);
+  else if (mode == MODE_RANDOM_WALKER) random_walker();
+  else if (mode == MODE_FOREST_WALK) forest_walk();
+  else if (mode == MODE_OCEANIC) oceanic();
+  else /*if (mode == MODE_RAINBOW_CYCLE) */ rainbow_cycle();
   
-}
-
-void set_all_pixels(RGBPixel c) {
-  for (byte i = 0; i < headband.numPixels(); i++) {
-    headband.setPixelColor(i, GAMMA(c));
-  }
-}
-
-#define RAINBOWCYCLE_DELAY 16
-void iterate_rainbowcycle() {
-  byte rotation = (millis() / RAINBOWCYCLE_DELAY);
-  
-  set_edges(Wheel(rotation));
-  set_inner_ears(Wheel(rotation + /*85*/ 127));
-  
-  headband.show();   // write all the pixels out
-}
-
-// cycle through a rainbow across the headset
-#define COLORSWEEP_SPEED 75
-#define COLORSWEEP_DURATION 500
-void iterate_colorsweep() {
-  RGBPixel colors[6] = {
-    GAMMA(RGB(255, 0, 0)),
-    GAMMA(RGB(255, 255, 0)),
-    GAMMA(RGB(0, 255, 0)),
-    GAMMA(RGB(0, 255, 255)),
-    GAMMA(RGB(0, 0, 255)),
-    GAMMA(RGB(255, 0, 255))
-  };
-  
-  // calculate current color in sequence
-  byte color_id = (millis() / COLORSWEEP_DURATION) % 6;
-  RGBPixel color = colors[color_id];
-  byte pixel_id = (millis() % COLORSWEEP_DURATION) / COLORSWEEP_SPEED;
-  
-  if (pixel_id < headband.numPixels()) {
-    if (color_id & 1) { // alternate diretion for each color
-      headband.setPixelColor(pixel_id, color);
-    } else {
-      headband.setPixelColor(headband.numPixels() - (pixel_id + 1), color);
-    }
-  }
+  // update headband
   headband.show();
 }
 
-// alternate between two colours which match my hairdye
-#define HAIRMATCH_SPEED 50
-#define HAIRMATCH_COLORS 4
-void iterate_hairmatch() {
-  RGBPixel colors[HAIRMATCH_COLORS] = {
-    RGB(0,0,0), GAMMA(RGB(65, 2, 254)),
-    RGB(0,0,0), GAMMA(RGB(57, 233, 0))
-  };
-  
-  RGBPixel color = colors[(millis() / HAIRMATCH_SPEED) % HAIRMATCH_COLORS];
-  set_all_pixels(color);
-  headband.show();
-}
 
-void iterate_tron_style(RGBPixel color) {
-  set_edges(color);
-  set_inner_ears(RGB(0,0,0));
-  headband.show();
-}
-
-#define HEARTBEAT_DURATION 700 /* duration of entire animation loop */
-#define HEARTBEAT_MICROS_INTERVAL (1000000L / HEARTBEAT_DURATION)
-void iterate_heartbeat() {
-  static int animation_frame; // a number between 0 and 767, looping
-  static unsigned long last_micros;
-  unsigned long current_micros = micros();
+// Bluebie's natural resting heartbeat duration is about about 1.1 seconds
+#define HEARTBEAT_DURATION 1200 /* duration of entire animation loop */
+#define HEARTBEAT_MICROS_INTERVAL ((HEARTBEAT_DURATION * 768UL) / 1000UL)
+inline void heartbeat(RGBPixel color) {
+  static unsigned int animation_frame; // a number between 0 and 767, looping
+  static unsigned int last_micros;
+  unsigned int current_micros = micros();
   
   // step forward heart's internal clock with system clock
   if (current_micros > last_micros + HEARTBEAT_MICROS_INTERVAL || current_micros < last_micros) {
@@ -171,125 +128,152 @@ void iterate_heartbeat() {
   
   // run animation based on heart's internal clock
   if (animation_frame < 512) {
-    set_inner_ears(GAMMA(RGB(255 - (animation_frame % 256), 0, 0)));
+    set_inner_ears(multiply_colors(GRAY(255 - (animation_frame % 256)), color));
   } else {
-    set_inner_ears(RGB(0,0,0));
+    set_inner_ears(BLACK);
   }
-  
-  headband.show();
 }
 
-void iterate_color(RGBPixel color) {
-  set_edges(color);
-  set_inner_ears(color);
-  headband.show();
+void two_color_strobe(RGBPixel color_1, RGBPixel color_2) {
+  set_all(get_two_color_strobe(color_1, color_2));
 }
 
-// strobe just one color
-void iterate_strobe(RGBPixel color, int frequency) {
-  boolean lit = (millis() % frequency) >= (frequency / 2);
-  if (lit) {
-    set_edges(GAMMA(color));
-    set_inner_ears(GAMMA(color));
-  } else {
-    set_edges(RGB(0,0,0));
-    set_inner_ears(RGB(0,0,0));
-  }
-  
-  headband.show();
+// set inner and outer to opposite colors
+inline void opposites(byte hue) {
+  set_inner_ears(Wheel(hue));
+  set_edges(Wheel(hue + 127));
 }
 
-#define COLOR_CRAWL_DURATION 50
-void iterate_color_crawl() {
-  static unsigned long prev_time;
-  unsigned long current_time = millis();
-  if (prev_time + COLOR_CRAWL_DURATION < current_time || current_time < prev_time) {
-    prev_time = current_time;
-    
-    byte target_pixel = rand() % headband.numPixels();
-    RGBPixel color = Wheel(rand());
-    headband.setPixelColor(target_pixel, color);
-  }
-  
-  headband.show();
+// strobe a single color
+inline void strobe(RGBPixel color) {
+  two_color_strobe(color, color);
 }
 
-#define PULSES_DURATION 1500
-#define PULSE_DURATION 350
-#define PULSE_OFFSET 225
-void iterate_pulse(RGBPixel color) {
+// toggle light between edge and inner rapidly
+inline void toggle_strobe(RGBPixel color) {
+  boolean toggler = (millis() / TOGGLE_INTERVAL) % 2;
+  set_inner_ears(toggler ? BLACK : color);
+  set_edges(toggler ? color : BLACK);
+}
+
+// send a gentle wave of light downwards
+#define WAVES_TOTAL_DURATION 1500
+#define WAVE_DURATION 350
+#define WAVE_OFFSET 210
+inline void wave(RGBPixel color) {
   unsigned long start_time = millis();
-  start_time -= start_time % PULSES_DURATION; // round down to last start
+  start_time -= start_time % WAVES_TOTAL_DURATION; // round down to last start
   
-  pulse(1, color, start_time, PULSE_DURATION);
-  pulse(2, color, start_time + PULSE_OFFSET, PULSE_DURATION);
-  pulse(0, color, start_time + (PULSE_OFFSET * 2), PULSE_DURATION);
+  wave_light(1, color, start_time, WAVE_DURATION);
+  wave_light(2, color, start_time + WAVE_OFFSET, WAVE_DURATION);
+  wave_light(0, color, start_time + (WAVE_OFFSET * 2), WAVE_DURATION);
   
-  pulse(4, color, start_time, PULSE_DURATION);
-  pulse(3, color, start_time + PULSE_OFFSET, PULSE_DURATION);
-  pulse(5, color, start_time + (PULSE_OFFSET * 2), PULSE_DURATION);
+  wave_light(4, color, start_time, WAVE_DURATION);
+  wave_light(3, color, start_time + WAVE_OFFSET, WAVE_DURATION);
+  wave_light(5, color, start_time + (WAVE_OFFSET * 2), WAVE_DURATION);
   
   headband.show();
 }
 
 // triangle wave pulse one pixel at a start time for a duration
-void pulse(byte pixel_id, RGBPixel color, unsigned long start_time, unsigned long duration) {
-  //int time = millis() - start_time;
-  long time = millis() - start_time;
-  time *= 256;
-  time /= duration;
+void wave_light(byte pixel_id, RGBPixel color, unsigned long start_time, unsigned long duration) {
+  long relative_time = millis() - start_time;
+  relative_time *= 256;
+  relative_time /= duration;
   
   byte intensity = 0;
-  if (time > 0 && time < 256) {
-    intensity = time;
-  } else if (time >= 256 && time < 512) {
-    intensity = 255 - (time - 256);
+  if (relative_time >= 0 && relative_time <= 511) {
+    intensity = lookup_sine(relative_time / 2);
   }
   
   RGBPixel gray_color = GRAY(intensity); // to multiply with to control brightness
   headband.setPixelColor(pixel_id, multiply_colors(color, gray_color));
 }
 
-void set_edges(RGBPixel color) {
+// set random hues to random lights 
+void random_walker() {
+  static unsigned int prev_time;
+  unsigned int current_time = millis();
+  if (prev_time + RANDOM_WALKER_WAIT < current_time || current_time < prev_time) {
+    prev_time = current_time;
+    
+    byte target_pixel = rand() % headband.numPixels();
+    RGBPixel color = Wheel(rand());
+    headband.setPixelColor(target_pixel, color);
+  }
+}
+
+// calculate forest walk colors
+inline RGBPixel forest_walk_equasion(unsigned int step) {
+  unsigned int green = perlin(step) + 70;
+  
+  byte lightness = green / 4;
+  lightness += green > 255 ? green - 255 : 0;
+  green -= green > 255 ? green - 255 : 0;
+  signed char color_wiggler = (lookup_sine((step % 1024) / 4) / 8) - 16;
+  
+  return RGB(
+    constrain(lightness - color_wiggler, 0, 255),
+    green,
+    constrain(lightness + color_wiggler, 0, 255)
+  );
+}
+
+// perlin random colours inspired by light falling through a forest canopy
+void forest_walk() {
+  for (byte i = 0; i < headband.numPixels(); i++) {
+    RGBPixel color = forest_walk_equasion((millis() / 3) + (i * 20));
+    headband.setPixelColor(i, color);
+  }
+}
+
+// waving colors inspired by the ocean
+inline void oceanic() {
+  unsigned int step = millis() / 5;
+  byte lightness = (lookup_sine((step % 512) / 2) + lookup_sine((step % 768) / 3)) / 4;
+  byte blue = 192 + (lookup_sine((step % 256)) / 4);
+  signed char color_wiggler = (lookup_sine((step % 1024) / 4) / 8) - 16;
+  byte left = constrain(lightness - color_wiggler, 0, 255);
+  byte right = constrain(lightness + color_wiggler, 0, 255);
+  headband.setPixelColor(2, left, right, blue);
+  headband.setPixelColor(3, right, left, blue);
+}
+
+// rotate through a rainbow, with opposite hue colours on edges
+inline void rainbow_cycle() {
+  byte rotation = (millis() / RAINBOW_CYCLE_DELAY);
+  opposites(rotation);
+}
+
+
+// strobes between color_1, black, color_2, and black in that order
+inline RGBPixel get_two_color_strobe(RGBPixel color_1, RGBPixel color_2) {
+  byte idx = (millis() / STROBE_INTERVAL) % 4;
+  if (idx != 0) color_1 = color_2;
+  if (idx & 1) color_1 = BLACK;
+  return color_1;
+}
+
+// set edge lights to a color - doesn't affect inner lights
+inline void set_edges(RGBPixel color) {
   headband.setPixelColor(0, color);
   headband.setPixelColor(1, color);
   headband.setPixelColor(4, color);
   headband.setPixelColor(5, color);
 }
 
-void set_inner_ears(RGBPixel color) {
+// set inner lights to a color - doesn't affect edge lights
+inline void set_inner_ears(RGBPixel color) {
   headband.setPixelColor(2, color);
   headband.setPixelColor(3, color);
 }
 
-// turn an incrementing number in to a triangle wave
-//byte triangle(byte input) {
-//  if (input < 128) {
-//    return input * 2;
-//  } else {
-//    return 255 - ((input - 128) * 2);
-//  }
-//}
-
-// multiply two colours together
-RGBPixel multiply_colors(RGBPixel left, RGBPixel right) {
-  left.red   = (left.red   * right.red)   / 256;
-  left.green = (left.green * right.green) / 256;
-  left.blue  = (left.blue  * right.blue)  / 256;
-  return left;
+// set every light to a color
+inline void set_all(RGBPixel color) {
+  set_inner_ears(color);
+  set_edges(color);
 }
 
-//Input a value 0 to 255 to get a color value.
-//The colours are a transition r - g -b - back to r
-RGBPixel Wheel(byte WheelPos)
-{
-  if (WheelPos < 85) {
-   return RGB(WheelPos * 3, 255 - WheelPos * 3, 0);
-  } else if (WheelPos < 170) {
-   WheelPos -= 85;
-   return RGB(255 - WheelPos * 3, 0, WheelPos * 3);
-  } else {
-   WheelPos -= 170; 
-   return RGB(0, WheelPos * 3, 255 - WheelPos * 3);
-  }
-}
+
+
+
