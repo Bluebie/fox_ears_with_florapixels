@@ -1,12 +1,9 @@
 // Headband Program for fox ears with florapixels written by Bluebie 2013-4-14
-// first prepare the chip with the write_sine_wave_table_to_eeprom sketch
-//#include "Adafruit_FloraPixel.h"
 #include <Adafruit_NeoPixel.h>
-#include <EEPROM.h>
 #include "utilities.h"
 
 // ----------- available modes:
-#define MODE_HEARTBEAT        0
+#define MODE_RANDOM_WALKER    0
 #define MODE_WHITE            1
 #define MODE_BOTH_LIGHT       2
 #define MODE_EDGE_LIGHT       3
@@ -15,8 +12,8 @@
 #define MODE_TWO_HUE_STROBE   6
 #define MODE_REGULAR_STROBE   7
 #define MODE_TOGGLE_STROBE    8
-#define MODE_WAVE             9
-#define MODE_RANDOM_WALKER   10
+#define MODE_HEARTBEAT        9
+#define MODE_WAVE            10
 #define MODE_FOREST_WALK     11
 #define MODE_OCEANIC         12
 #define MODE_RAINBOW_CYCLE   13
@@ -25,18 +22,15 @@
 // -------------------- timing:
 #define STROBE_INTERVAL      30 /* milliseconds between transition */
 #define TOGGLE_INTERVAL      50
-#define HUMAN_REACTION_TIME  40 /* takes 20ms to react from eye to finger */
+#define HUMAN_REACTION_TIME  20 /* takes 20ms to react from eye to finger */
 #define COLOR_SELECT_WAIT    20 /* milliseconds between hue increments when holding button */
 #define RANDOM_WALKER_WAIT   50
 #define RAINBOW_CYCLE_DELAY  16
 
-byte mode = MODE_HEARTBEAT;
-byte hue = 85; // currently selected hue - default is red
-RGBPixel hue_cache;
-
-// Set the first variable to the NUMBER of pixels. 25 = 25 pixels in a row
-//Adafruit_FloraPixel headband = Adafruit_FloraPixel(6);
 Adafruit_NeoPixel headband = Adafruit_NeoPixel(6, 3, NEO_RGB + NEO_KHZ400);
+byte mode = MODE_HEARTBEAT;
+byte hue = 0; // currently selected hue - default is red
+RGBPixel hue_cache;
 
 void setup() {
   digitalWrite(4, LOW);
@@ -49,7 +43,7 @@ void setup() {
   
   headband.begin();
   
-  hue_cache = Wheel(hue);
+  hue_cache = color_wheel(hue);
 }
 
 void on_button() {
@@ -62,8 +56,8 @@ void on_button() {
   
   while (digitalRead(5) == LOW) {
     if (millis() - start_time > 500) { // long hold
-      hue -= 1;
-      hue_cache = Wheel(hue);
+      hue += 1;
+      hue_cache = color_wheel(hue);
       set_all(hue_cache);
       headband.show();
       delay(COLOR_SELECT_WAIT);
@@ -79,7 +73,7 @@ void on_button() {
     // it was a long hold
     // because human reaction times are slow, for colour selection should reverse hue back
     // by about 20ms (FINGER_REACTION_TIME) to give user the colour they intended
-    hue += HUMAN_REACTION_TIME / COLOR_SELECT_WAIT;
+    hue -= HUMAN_REACTION_TIME / COLOR_SELECT_WAIT;
   }
   
   //srand(rand() + micros()); // reseed random number generator with user input
@@ -97,7 +91,7 @@ void loop() {
   else if (mode == MODE_EDGE_LIGHT) set_edges(hue_cache);
   else if (mode == MODE_INNER_LIGHT) set_inner_ears(hue_cache);
   else if (mode == MODE_OPPOSITES) opposites(hue);
-  else if (mode == MODE_TWO_HUE_STROBE) two_color_strobe(hue_cache, Wheel(hue + 127));
+  else if (mode == MODE_TWO_HUE_STROBE) two_color_strobe(hue_cache, color_wheel(hue + 127));
   else if (mode == MODE_REGULAR_STROBE) strobe(hue_cache);
   else if (mode == MODE_TOGGLE_STROBE) toggle_strobe(hue_cache);
   else if (mode == MODE_WAVE) wave(hue_cache);
@@ -140,8 +134,8 @@ void two_color_strobe(RGBPixel color_1, RGBPixel color_2) {
 
 // set inner and outer to opposite colors
 inline void opposites(byte hue) {
-  set_inner_ears(Wheel(hue));
-  set_edges(Wheel(hue + 127));
+  set_inner_ears(color_wheel(hue));
+  set_edges(color_wheel(hue + 127));
 }
 
 // strobe a single color
@@ -198,7 +192,7 @@ void random_walker() {
     prev_time = current_time;
     
     byte target_pixel = rand() % headband.numPixels();
-    RGBPixel color = Wheel(rand());
+    RGBPixel color = color_wheel(rand());
     headband.setPixelColor(target_pixel, color);
   }
 }
@@ -273,7 +267,3 @@ inline void set_all(RGBPixel color) {
   set_inner_ears(color);
   set_edges(color);
 }
-
-
-
-
