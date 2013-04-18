@@ -17,8 +17,9 @@
 #define MODE_FOREST_WALK     11
 #define MODE_OCEANIC         12
 #define MODE_RAINBOW_CYCLE   13
+#define MODE_SPIN_UP         14
 // --------------------- total:
-#define MODES                14
+#define MODES                15
 // -------------------- timing:
 #define STROBE_INTERVAL      30 /* milliseconds between transition */
 #define TOGGLE_INTERVAL      50
@@ -29,7 +30,7 @@
 
 Adafruit_NeoPixel headband = Adafruit_NeoPixel(6, 3, NEO_RGB + NEO_KHZ400);
 byte mode = MODE_HEARTBEAT;
-byte hue = 0; // currently selected hue - default is red
+byte hue = 85; // currently selected hue - default is red
 RGBPixel hue_cache;
 
 void setup() {
@@ -98,7 +99,8 @@ void loop() {
   else if (mode == MODE_RANDOM_WALKER) random_walker();
   else if (mode == MODE_FOREST_WALK) forest_walk();
   else if (mode == MODE_OCEANIC) oceanic();
-  else /*if (mode == MODE_RAINBOW_CYCLE) */ rainbow_cycle();
+  else if (mode == MODE_RAINBOW_CYCLE) rainbow_cycle();
+  else if (mode == MODE_SPIN_UP) spin_up();
   
   // update headband
   headband.show();
@@ -237,6 +239,16 @@ inline void oceanic() {
 inline void rainbow_cycle() {
   byte rotation = (millis() / RAINBOW_CYCLE_DELAY);
   opposites(rotation);
+}
+
+
+inline void spin_up() {
+  byte angle = millis();
+  for (byte idx = 0; idx < 3; idx++) {
+    RGBPixel color = color_wheel(-(angle + (idx * 64)));
+    headband.setPixelColor(idx, color);
+    headband.setPixelColor(5 - idx, color);
+  }
 }
 
 
